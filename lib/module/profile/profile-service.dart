@@ -1,28 +1,26 @@
-import 'dart:convert';
-
+import 'package:elektra_fit/global/index.dart';
 import 'package:http/http.dart' as http;
-import 'package:rxdart/rxdart.dart';
 
 import '../../global/global-models.dart';
-import '../../global/global-variables.dart';
 
 class ProfileService {
   BehaviorSubject<List<SpaMemberBodyAnalysis?>?> spaMemberBody$ = BehaviorSubject.seeded(null);
+  BehaviorSubject<List<ReservationModel?>?> reservation$ = BehaviorSubject.seeded(null);
+
+  BehaviorSubject<Map<String, List<ReservationModel>?>?> res$ = BehaviorSubject.seeded({"To be planned".tr(): [], "Planned".tr(): [], "Completed".tr(): []});
 
   Future<RequestResponse?> spaMemberBodyAnality() async {
-    final url = Uri.parse('https://4001.hoteladvisor.net');
+    spaMemberBody$.add(null);
     try {
       final response = await http.post(url,
           body: json.encode({
             "Action": "ApiSequence",
             "Object": "spaMemberBodyAnalysisList",
-            "Parameters": {"HOTELID": member$.value?.first.profile.hotelid}
+            "Parameters": {"HOTELID": hotelId}
           }));
       if (response.statusCode == 200) {
-        final jsonData = json.decode(response.body);
-
+        final jsonData = json.decode(utf8.decode(response.bodyBytes));
         List<SpaMemberBodyAnalysis> spaMemberBody = [];
-
         for (var item in jsonData) {
           spaMemberBody.add(SpaMemberBodyAnalysis.fromJson(item));
         }
@@ -32,6 +30,44 @@ class ProfileService {
         return RequestResponse(message: jsonData.toString(), result: true);
       }
     } catch (item) {
+      return RequestResponse(message: item.toString(), result: false);
+    }
+    return null;
+  }
+
+  Future<RequestResponse?> ressList() async {
+    res$.value = null;
+    try {
+      var response = await http.post(url,
+          body: json.encode({
+            "Action": "ApiSequence",
+            "Object": "spaMemberReservationList",
+            "Parameters": {"HOTELID": hotelId, "MEMBERID": member$.value?.first.profile.guestid}
+          }));
+      final jsonData = json.decode(utf8.decode(response.bodyBytes));
+      if (jsonData != null) {
+        var today = DateTime.now();
+        res$.value = {"To be planned".tr(): [], "Planned".tr(): [], "Completed".tr(): []};
+        jsonData.forEach((e) {
+          ReservationModel reservation = ReservationModel.fromJson(e);
+
+          if (reservation.resstart == null && reservation.resend == null) {
+            res$.value?["To be planned".tr()]?.add(reservation);
+          } else {
+            if (reservation.resstart != null && reservation.resstart!.isBefore(today)) {
+              res$.value?["Completed".tr()]?.sort((a, b) => a.resstart!.compareTo(b.resstart!));
+              res$.value?["Completed".tr()]?.add(reservation);
+            } else {
+              res$.value?["Planned".tr()]?.sort((a, b) => a.resstart!.compareTo(b.resstart!));
+              res$.value?["Planned".tr()]?.add(reservation);
+            }
+          }
+        });
+        res$.add(res$.value);
+      }
+      return RequestResponse(message: jsonData.toString(), result: true);
+    } catch (item) {
+      print(item);
       return RequestResponse(message: item.toString(), result: false);
     }
   }
